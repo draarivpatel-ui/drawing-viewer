@@ -17,12 +17,9 @@ test("matches the Classic F1 service sheet snapshot", async () => {
   await expect(svg).toMatchSvgSnapshot(import.meta.path)
 })
 
-test.failing(
-  "renders the exploded Classic F1 view and its callouts",
-  async () => {
-    const svg = await renderServiceSheet()
-    expect(svg).toContain("EXPLODED FOR SERVICE")
-    expect(svg).toContain("Display mount")
-    expect(svg.match(/data:image\/png;base64,/g)).toHaveLength(3)
-  },
-)
+test("renders the exploded Classic F1 view and its callouts", async () => {
+  const svg = await renderServiceSheet()
+  expect(svg).toContain("EXPLODED FOR SERVICE")
+  expect(svg).toContain("Display mount")
+  expect(svg.match(/data:image\/png;base64,/g)).toHaveLength(3)
+})

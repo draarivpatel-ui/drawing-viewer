@@ -1,11 +1,10 @@
 import { convertCircuitJsonToDrawingPages } from "@tscircuit/circuit-json-to-drawing"
 import type { CircuitJson, DrawingPartView } from "circuit-json"
-import {
-  convertCircuitJsonTo3D,
-  convertSceneToGLTF,
-} from "circuit-json-to-gltf"
-import { bufferFromDataURI, createSceneFromGLTF } from "poppygl"
 import type { RenderDrawingPagesOptions } from "../render-drawing-pages"
+import {
+  resolveAssemblySceneParts,
+  resolveDrawingScene,
+} from "./resolve-drawing-scene"
 
 export const renderDrawingPages = (
   circuitJson: CircuitJson,
@@ -13,29 +12,9 @@ export const renderDrawingPages = (
 ) =>
   convertCircuitJsonToDrawingPages(circuitJson, {
     drawingPageId: options.drawingPageId,
-    resolveScene: async (view) => {
-      const selected = selectDrawingGeometry(circuitJson, view)
-      const board = selected.find((element) => element.type === "pcb_board")
-      const model = await convertCircuitJsonTo3D(selected, {
-        renderBoardTextures: false,
-        boardThickness: board?.thickness,
-      })
-      const gltf = await convertSceneToGLTF(model, { binary: false })
-      if (
-        gltf instanceof ArrayBuffer ||
-        !("buffers" in gltf) ||
-        !Array.isArray(gltf.buffers)
-      ) {
-        throw new Error("Drawing geometry converter returned invalid glTF")
-      }
-      // Keep the exporter frame used by core's resolved dimension endpoints.
-      return createSceneFromGLTF(gltf, {
-        buffers: gltf.buffers.map((buffer: { uri: string }) =>
-          bufferFromDataURI(buffer.uri),
-        ),
-        images: [],
-      })
-    },
+    resolveScene: (view) =>
+      resolveDrawingScene(selectDrawingGeometry(circuitJson, view)),
+    resolveSceneParts: () => resolveAssemblySceneParts(circuitJson),
   })
 
 const selectDrawingGeometry = (
