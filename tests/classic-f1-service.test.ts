@@ -26,15 +26,12 @@ const renderServiceSheet = async () => {
   )
   const fetchModel = globalThis.fetch
   const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
-    new Proxy(fetchModel, {
-      apply(target, receiver, args) {
-        if (String(args[0]).endsWith(lcdPath.slice(1)))
-          return Promise.resolve(
-            new Response("# No model at the relative URL\n"),
-          )
-        return Reflect.apply(target, receiver, args)
-      },
-    }),
+    Object.assign(async (...fetchArgs: Parameters<typeof fetch>) => {
+      const [url] = fetchArgs
+      if (String(url).endsWith(lcdPath.slice(1)))
+        return new Response("# No model at the relative URL\n")
+      return fetchModel(...fetchArgs)
+    }, fetchModel),
   )
   try {
     const options = {
