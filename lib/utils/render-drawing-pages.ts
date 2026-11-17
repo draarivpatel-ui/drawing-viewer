@@ -8,13 +8,17 @@ import {
 
 export const renderDrawingPages = (
   circuitJson: CircuitJson,
-  options: RenderDrawingPagesOptions = {},
+  { drawingPageId, resolveStaticAsset }: RenderDrawingPagesOptions = {},
 ) =>
   convertCircuitJsonToDrawingPages(circuitJson, {
-    drawingPageId: options.drawingPageId,
+    drawingPageId,
     resolveScene: (view) =>
-      resolveDrawingScene(selectDrawingGeometry(circuitJson, view)),
-    resolveSceneParts: () => resolveAssemblySceneParts(circuitJson),
+      resolveDrawingScene(
+        selectDrawingGeometry(circuitJson, view),
+        resolveStaticAsset,
+      ),
+    resolveSceneParts: () =>
+      resolveAssemblySceneParts(circuitJson, resolveStaticAsset),
   })
 
 const selectDrawingGeometry = (

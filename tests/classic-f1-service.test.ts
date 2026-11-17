@@ -59,7 +59,7 @@ test("renders the exploded Classic F1 view and its callouts", async () => {
   expect(svg.match(/data:image\/png;base64,/g)).toHaveLength(3)
 })
 
-test.failing("resolves Classic F1's release-relative LCD OBJ", async () => {
+test("resolves Classic F1's release-relative LCD OBJ", async () => {
   const { resolveStaticAsset } = await renderServiceSheet()
   expect(resolveStaticAsset).toHaveBeenCalledWith(lcdPath)
 })

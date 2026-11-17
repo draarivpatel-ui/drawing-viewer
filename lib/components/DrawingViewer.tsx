@@ -10,22 +10,26 @@ import {
 } from "react"
 import { compose, scale, toCSS, translate } from "transformation-matrix"
 import { useMouseMatrixTransform } from "use-mouse-matrix-transform"
+import type { RenderDrawingPagesOptions } from "../render-drawing-pages"
 import { DrawingPageSelector } from "./DrawingPageSelector"
 
 export interface DrawingViewerProps {
   circuitJson: CircuitJson
+  resolveStaticAsset?: RenderDrawingPagesOptions["resolveStaticAsset"]
   containerStyle?: CSSProperties
   className?: string
 }
 
 export const DrawingViewer = ({
   circuitJson,
+  resolveStaticAsset,
   containerStyle,
   className,
 }: DrawingViewerProps) => {
   const [selectedPageId, setSelectedPageId] = useState<string>()
   const [result, setResult] = useState<{
     circuitJson: CircuitJson
+    resolveStaticAsset: DrawingViewerProps["resolveStaticAsset"]
     pages?: DrawingPageOutput[]
     error?: string
   } | null>(null)
@@ -34,15 +38,18 @@ export const DrawingViewer = ({
     let cancelled = false
     setResult(null)
     void import("../utils/render-drawing-pages")
-      .then(({ renderDrawingPages }) => renderDrawingPages(circuitJson))
+      .then(({ renderDrawingPages }) =>
+        renderDrawingPages(circuitJson, { resolveStaticAsset }),
+      )
       .then(
         (pages) => {
-          if (!cancelled) setResult({ circuitJson, pages })
+          if (!cancelled) setResult({ circuitJson, resolveStaticAsset, pages })
         },
         (error: unknown) => {
           if (!cancelled) {
             setResult({
               circuitJson,
+              resolveStaticAsset,
               error: error instanceof Error ? error.message : String(error),
             })
           }
@@ -51,9 +58,13 @@ export const DrawingViewer = ({
     return () => {
       cancelled = true
     }
-  }, [circuitJson])
+  }, [circuitJson, resolveStaticAsset])
 
-  const currentResult = result?.circuitJson === circuitJson ? result : null
+  const currentResult =
+    result?.circuitJson === circuitJson &&
+    result.resolveStaticAsset === resolveStaticAsset
+      ? result
+      : null
   const drawingPages = circuitJson.filter(
     (element) => element.type === "drawing_page",
   )

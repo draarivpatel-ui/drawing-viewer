@@ -54,7 +54,7 @@
   "dependencies": {
     "@tscircuit/circuit-json-to-drawing": "https://jscdn.tscircuit.com/@tscircuit/circuit-json-to-drawing/0.0.6.tgz",
     "circuit-json": "^0.0.550",
-    "circuit-json-to-gltf": "0.0.164",
+    "circuit-json-to-gltf": "https://pkg.pr.new/tscircuit/circuit-json-to-gltf@6aa28c1",
     "gl-matrix": "^3.4.4",
     "poppygl": "^0.0.38",
     "transformation-matrix": "^3.0.0",
