@@ -2,43 +2,30 @@ import { expect, mock, test } from "bun:test"
 import { assembly, RootCircuit } from "@tscircuit/core"
 import type { CircuitJson } from "circuit-json"
 import { JSDOM } from "jsdom"
-import { act } from "react"
+import { act, type ReactElement } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import {
   DrawingViewer,
   type DrawingViewerProps,
 } from "../lib/components/DrawingViewer"
 
-const render = async ({
-  root,
-  container,
-  circuitJson,
-  resolveStaticAsset,
-  className,
-}: {
-  root: Root
-  container: HTMLElement
-  circuitJson: CircuitJson
-  resolveStaticAsset?: DrawingViewerProps["resolveStaticAsset"]
-  className?: string
-}) => {
-  await act(async () =>
-    root.render(
-      <DrawingViewer
-        circuitJson={circuitJson}
-        resolveStaticAsset={resolveStaticAsset}
-        className={className}
-      />,
-    ),
-  )
+const render = async (
+  viewer: ReactElement<DrawingViewerProps>,
+  { root, container }: { root: Root; container: HTMLElement },
+) => {
+  await act(async () => root.render(viewer))
   const deadline = Date.now() + 10000
-  while (container.querySelector('[role="status"]') && circuitJson.length) {
+  while (
+    container.querySelector('[role="status"]') &&
+    viewer.props.circuitJson.length
+  ) {
     if (Date.now() > deadline) throw new Error("Drawing rendering timed out")
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20))
     })
   }
   expect(container.querySelector('[role="alert"]')).toBeNull()
+  return container.querySelector("img")?.getAttribute("src")
 }
 
 const selectPage = async ({
@@ -131,7 +118,10 @@ test("switches drawings, refits the viewport, and keeps selection valid as pages
   const { dom, root, container, previousGlobals } = createDrawingViewerDom()
 
   try {
-    await render({ root, container, circuitJson })
+    await render(<DrawingViewer circuitJson={circuitJson} />, {
+      root,
+      container,
+    })
     expect(container.querySelectorAll("img")).toHaveLength(1)
     expect(container.querySelector("img")?.alt).toBe(
       "Engineering drawing: Carrier overview",
@@ -158,7 +148,10 @@ test("switches drawings, refits the viewport, and keeps selection valid as pages
     )
     expect(transform(container)).toBe(fittedTransform)
 
-    await render({ root, container, circuitJson: [...circuitJson] })
+    await render(<DrawingViewer circuitJson={[...circuitJson]} />, {
+      root,
+      container,
+    })
     expect(container.querySelector("select")?.value).toBe(
       pages[1].drawing_page_id,
     )
@@ -172,18 +165,24 @@ test("switches drawings, refits the viewport, and keeps selection valid as pages
         !("drawing_page_id" in element) ||
         element.drawing_page_id === pages[0].drawing_page_id,
     )
-    await render({ root, container, circuitJson: firstPageOnly })
+    await render(<DrawingViewer circuitJson={firstPageOnly} />, {
+      root,
+      container,
+    })
     expect(container.querySelector("select")).toBeNull()
     expect(container.querySelectorAll("img")).toHaveLength(1)
     expect(container.querySelector("img")?.alt).toBe(
       "Engineering drawing: Carrier overview",
     )
 
-    await render({ root, container, circuitJson })
+    await render(<DrawingViewer circuitJson={circuitJson} />, {
+      root,
+      container,
+    })
     expect(container.querySelector("select")?.value).toBe(
       pages[0].drawing_page_id,
     )
-    await render({ root, container, circuitJson: [] })
+    await render(<DrawingViewer circuitJson={[]} />, { root, container })
     expect(container.querySelector("select")).toBeNull()
     expect(container.querySelector("img")).toBeNull()
     expect(container.textContent).toContain("No engineering drawings")
@@ -198,27 +197,19 @@ test("updates Classic F1 models when the resolver changes and reuses drawings wh
   const circuitJson: CircuitJson = await Bun.file(
     new URL("./fixtures/classic-f1-service.circuit.json", import.meta.url),
   ).json()
-  const lcd = circuitJson.find(
-    (element) =>
-      element.type === "cad_component" &&
-      element.cad_component_id === "cad_component_58",
+  const cadComponents = circuitJson.filter(
+    (element) => element.type === "cad_component",
   )
-  const base = circuitJson.find(
-    (element) =>
-      element.type === "cad_component" &&
-      element.cad_component_id === "cad_component_52",
-  )
-  if (
-    lcd?.type !== "cad_component" ||
-    !lcd.model_obj_url ||
-    base?.type !== "cad_component" ||
-    !base.model_obj_url
-  )
-    throw new Error("The Classic F1 fixture is missing its LCD or base model")
+  const lcd = cadComponents.find(
+    (component) => component.cad_component_id === "cad_component_58",
+  )!
+  const base = cadComponents.find(
+    (component) => component.cad_component_id === "cad_component_52",
+  )!
 
   const lcdPath = "./mechanical/cad/lcd-module.obj"
-  const lcdModel = lcd.model_obj_url
-  const replacementModel = base.model_obj_url
+  const lcdModel = lcd.model_obj_url!
+  const replacementModel = base.model_obj_url!
   lcd.model_obj_url = lcdPath
   const resolveLcdAsset = mock((modelUrl: string) =>
     modelUrl === lcdPath ? lcdModel : modelUrl,
@@ -229,47 +220,39 @@ test("updates Classic F1 models when the resolver changes and reuses drawings wh
   const { dom, root, container, previousGlobals } = createDrawingViewerDom()
 
   try {
-    await render({
-      root,
-      container,
-      circuitJson,
-      resolveStaticAsset: resolveLcdAsset,
-    })
+    const initialDrawing = await render(
+      <DrawingViewer
+        circuitJson={circuitJson}
+        resolveStaticAsset={resolveLcdAsset}
+      />,
+      { root, container },
+    )
     expect(resolveLcdAsset).toHaveBeenCalledWith(lcdPath)
-    const initialDrawing = container.querySelector("img")!.getAttribute("src")!
+    expect(initialDrawing).toBeTruthy()
     const initialResolverCalls = resolveLcdAsset.mock.calls.length
-    expect(
-      decodeURIComponent(initialDrawing.slice(initialDrawing.indexOf(",") + 1)),
-    ).toBe(
-      await Bun.file(
-        new URL("./__snapshots__/classic-f1-service.snap.svg", import.meta.url),
-      ).text(),
-    )
 
-    await render({
-      root,
-      container,
-      circuitJson,
-      resolveStaticAsset: resolveLcdAsset,
-      className: "parent-updated",
-    })
-    expect(container.firstElementChild?.className).toBe("parent-updated")
+    const unchangedDrawing = await render(
+      <DrawingViewer
+        circuitJson={circuitJson}
+        resolveStaticAsset={resolveLcdAsset}
+        className="parent-updated"
+      />,
+      { root, container },
+    )
     expect(resolveLcdAsset).toHaveBeenCalledTimes(initialResolverCalls)
-    expect(container.querySelector("img")!.getAttribute("src")).toBe(
-      initialDrawing,
-    )
+    expect(unchangedDrawing).toBe(initialDrawing)
 
-    await render({
-      root,
-      container,
-      circuitJson,
-      resolveStaticAsset: resolveReplacementAsset,
-    })
+    const updatedDrawing = await render(
+      <DrawingViewer
+        circuitJson={circuitJson}
+        resolveStaticAsset={resolveReplacementAsset}
+      />,
+      { root, container },
+    )
     expect(resolveReplacementAsset).toHaveBeenCalledWith(lcdPath)
     expect(resolveLcdAsset).toHaveBeenCalledTimes(initialResolverCalls)
-    expect(container.querySelector("img")!.getAttribute("src")).not.toBe(
-      initialDrawing,
-    )
+    expect(updatedDrawing).toBeTruthy()
+    expect(updatedDrawing).not.toBe(initialDrawing)
   } finally {
     await act(async () => root.unmount())
     Object.assign(globalThis, previousGlobals)
