@@ -1,24 +1,37 @@
-import { expect, test } from "bun:test"
+import { expect, mock, test } from "bun:test"
 import { assembly, RootCircuit } from "@tscircuit/core"
 import type { CircuitJson } from "circuit-json"
 import { JSDOM } from "jsdom"
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
-import { DrawingViewer } from "../lib/components/DrawingViewer"
+import {
+  DrawingViewer,
+  type DrawingViewerProps,
+} from "../lib/components/DrawingViewer"
 
 const render = async ({
   root,
   container,
   circuitJson,
+  resolveStaticAsset,
+  className,
 }: {
   root: Root
   container: HTMLElement
   circuitJson: CircuitJson
+  resolveStaticAsset?: DrawingViewerProps["resolveStaticAsset"]
+  className?: string
 }) => {
   await act(async () =>
-    root.render(<DrawingViewer circuitJson={circuitJson} />),
+    root.render(
+      <DrawingViewer
+        circuitJson={circuitJson}
+        resolveStaticAsset={resolveStaticAsset}
+        className={className}
+      />,
+    ),
   )
-  const deadline = Date.now() + 5000
+  const deadline = Date.now() + 10000
   while (container.querySelector('[role="status"]') && circuitJson.length) {
     if (Date.now() > deadline) throw new Error("Drawing rendering timed out")
     await act(async () => {
@@ -49,37 +62,7 @@ const transform = (container: HTMLElement) =>
     .querySelector('[aria-label="Engineering drawing viewport"] > div')
     ?.getAttribute("style")
 
-test("switches drawings, refits the viewport, and keeps selection valid as pages change", async () => {
-  const circuit = new RootCircuit()
-  circuit.add(
-    <assembly.device name="device">
-      <board name="carrier" width={10} height={8} />
-      {[
-        { name: "overview", displayName: "Carrier overview" },
-        { name: "section" },
-        { name: "unnamed" },
-      ].map(({ name, displayName }) => (
-        <assembly.drawing.page
-          key={name}
-          name={name}
-          displayName={displayName}
-          size="iso_a4"
-        >
-          <assembly.drawing.partview
-            partRef=".carrier"
-            direction={name === "overview" ? "z+" : "y+"}
-            width={20}
-            height={15}
-          />
-        </assembly.drawing.page>
-      ))}
-    </assembly.device>,
-  )
-  await circuit.renderUntilSettled()
-  const circuitJson = circuit.getCircuitJson()
-  const pages = circuitJson.filter((element) => element.type === "drawing_page")
-  delete pages[2].name
-
+const createDrawingViewerDom = () => {
   const dom = new JSDOM('<div id="root"></div>', { url: "http://localhost" })
   const previousGlobals = {
     window: globalThis.window,
@@ -111,6 +94,41 @@ test("switches drawings, refits the viewport, and keeps selection valid as pages
 
   const container = document.getElementById("root")!
   const root = createRoot(container)
+
+  return { dom, root, container, previousGlobals }
+}
+
+test("switches drawings, refits the viewport, and keeps selection valid as pages change", async () => {
+  const circuit = new RootCircuit()
+  circuit.add(
+    <assembly.device name="device">
+      <board name="carrier" width={10} height={8} />
+      {[
+        { name: "overview", displayName: "Carrier overview" },
+        { name: "section" },
+        { name: "unnamed" },
+      ].map(({ name, displayName }) => (
+        <assembly.drawing.page
+          key={name}
+          name={name}
+          displayName={displayName}
+          size="iso_a4"
+        >
+          <assembly.drawing.partview
+            partRef=".carrier"
+            direction={name === "overview" ? "z+" : "y+"}
+            width={20}
+            height={15}
+          />
+        </assembly.drawing.page>
+      ))}
+    </assembly.device>,
+  )
+  await circuit.renderUntilSettled()
+  const circuitJson = circuit.getCircuitJson()
+  const pages = circuitJson.filter((element) => element.type === "drawing_page")
+  delete pages[2].name
+  const { dom, root, container, previousGlobals } = createDrawingViewerDom()
 
   try {
     await render({ root, container, circuitJson })
@@ -175,3 +193,86 @@ test("switches drawings, refits the viewport, and keeps selection valid as pages
     dom.window.close()
   }
 }, 20000)
+
+test("updates Classic F1 models when the resolver changes and reuses drawings while it stays stable", async () => {
+  const circuitJson: CircuitJson = await Bun.file(
+    new URL("./fixtures/classic-f1-service.circuit.json", import.meta.url),
+  ).json()
+  const lcd = circuitJson.find(
+    (element) =>
+      element.type === "cad_component" &&
+      element.cad_component_id === "cad_component_58",
+  )
+  const base = circuitJson.find(
+    (element) =>
+      element.type === "cad_component" &&
+      element.cad_component_id === "cad_component_52",
+  )
+  if (
+    lcd?.type !== "cad_component" ||
+    !lcd.model_obj_url ||
+    base?.type !== "cad_component" ||
+    !base.model_obj_url
+  )
+    throw new Error("The Classic F1 fixture is missing its LCD or base model")
+
+  const lcdPath = "./mechanical/cad/lcd-module.obj"
+  const lcdModel = lcd.model_obj_url
+  const replacementModel = base.model_obj_url
+  lcd.model_obj_url = lcdPath
+  const resolveLcdAsset = mock((modelUrl: string) =>
+    modelUrl === lcdPath ? lcdModel : modelUrl,
+  )
+  const resolveReplacementAsset = mock((modelUrl: string) =>
+    modelUrl === lcdPath ? replacementModel : modelUrl,
+  )
+  const { dom, root, container, previousGlobals } = createDrawingViewerDom()
+
+  try {
+    await render({
+      root,
+      container,
+      circuitJson,
+      resolveStaticAsset: resolveLcdAsset,
+    })
+    expect(resolveLcdAsset).toHaveBeenCalledWith(lcdPath)
+    const initialDrawing = container.querySelector("img")!.getAttribute("src")!
+    const initialResolverCalls = resolveLcdAsset.mock.calls.length
+    expect(
+      decodeURIComponent(initialDrawing.slice(initialDrawing.indexOf(",") + 1)),
+    ).toBe(
+      await Bun.file(
+        new URL("./__snapshots__/classic-f1-service.snap.svg", import.meta.url),
+      ).text(),
+    )
+
+    await render({
+      root,
+      container,
+      circuitJson,
+      resolveStaticAsset: resolveLcdAsset,
+      className: "parent-updated",
+    })
+    expect(container.firstElementChild?.className).toBe("parent-updated")
+    expect(resolveLcdAsset).toHaveBeenCalledTimes(initialResolverCalls)
+    expect(container.querySelector("img")!.getAttribute("src")).toBe(
+      initialDrawing,
+    )
+
+    await render({
+      root,
+      container,
+      circuitJson,
+      resolveStaticAsset: resolveReplacementAsset,
+    })
+    expect(resolveReplacementAsset).toHaveBeenCalledWith(lcdPath)
+    expect(resolveLcdAsset).toHaveBeenCalledTimes(initialResolverCalls)
+    expect(container.querySelector("img")!.getAttribute("src")).not.toBe(
+      initialDrawing,
+    )
+  } finally {
+    await act(async () => root.unmount())
+    Object.assign(globalThis, previousGlobals)
+    dom.window.close()
+  }
+}, 30000)

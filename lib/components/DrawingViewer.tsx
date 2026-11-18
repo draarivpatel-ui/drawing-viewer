@@ -15,6 +15,10 @@ import { DrawingPageSelector } from "./DrawingPageSelector"
 
 export interface DrawingViewerProps {
   circuitJson: CircuitJson
+  /**
+   * Keep this callback stable, for example with useCallback in the parent.
+   * Changing its identity regenerates the drawing pages.
+   */
   resolveStaticAsset?: RenderDrawingPagesOptions["resolveStaticAsset"]
   containerStyle?: CSSProperties
   className?: string
