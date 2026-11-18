@@ -1,6 +1,7 @@
 import type { DrawingScenePart } from "@tscircuit/circuit-json-to-drawing"
 import type { CircuitJson } from "circuit-json"
 import {
+  type CircuitTo3DOptions,
   convertCircuitJsonTo3D,
   convertSceneToGLTF,
 } from "circuit-json-to-gltf"
@@ -14,7 +15,10 @@ type ExportedDrawingGltf = {
   nodes: { extras?: { tscircuit?: { source_component_id?: string } } }[]
 }
 
-async function exportDrawingGltf(circuitJson: CircuitJson, foldPcbs?: boolean) {
+async function exportDrawingGltf(
+  circuitJson: CircuitJson,
+  options: Pick<CircuitTo3DOptions, "foldPcbs" | "resolveStaticAsset"> = {},
+) {
   const board = circuitJson.find((element) => element.type === "pcb_board")
   // With textures disabled, the exporter uses geometry fields shared by the
   // viewer's and the host application's Circuit JSON versions.
@@ -22,7 +26,7 @@ async function exportDrawingGltf(circuitJson: CircuitJson, foldPcbs?: boolean) {
   const model = await convertCircuitJsonTo3D(geometry, {
     boardThickness: board?.thickness,
     renderBoardTextures: false,
-    foldPcbs,
+    ...options,
   })
   const json = await convertSceneToGLTF(model, { binary: false })
   if (
@@ -42,8 +46,13 @@ async function exportDrawingGltf(circuitJson: CircuitJson, foldPcbs?: boolean) {
   }
 }
 
-export async function resolveDrawingScene(circuitJson: CircuitJson) {
-  const { gltf, resources } = await exportDrawingGltf(circuitJson)
+export async function resolveDrawingScene(
+  circuitJson: CircuitJson,
+  resolveStaticAsset?: CircuitTo3DOptions["resolveStaticAsset"],
+) {
+  const { gltf, resources } = await exportDrawingGltf(circuitJson, {
+    resolveStaticAsset,
+  })
   // Keep the exporter frame used by core's resolved dimension endpoints.
   return createSceneFromGLTF(gltf, resources)
 }
@@ -59,9 +68,12 @@ function canonicalAssemblyCalls(scene: ReturnType<typeof createSceneFromGLTF>) {
 
 export async function resolveAssemblySceneParts(
   circuitJson: CircuitJson,
+  resolveStaticAsset?: CircuitTo3DOptions["resolveStaticAsset"],
 ): Promise<DrawingScenePart[]> {
   const parts: DrawingScenePart[] = []
-  const { gltf, resources } = await exportDrawingGltf(circuitJson)
+  const { gltf, resources } = await exportDrawingGltf(circuitJson, {
+    resolveStaticAsset,
+  })
   for (const index of gltf.scenes[gltf.scene ?? 0].nodes) {
     const sourceId = gltf.nodes[index].extras?.tscircuit?.source_component_id
     if (!sourceId) continue
@@ -94,7 +106,7 @@ export async function resolveAssemblySceneParts(
           element.subcircuit_id === board.subcircuit_id)
       )
     })
-    const boardModel = await exportDrawingGltf(boardElements, foldPcbs)
+    const boardModel = await exportDrawingGltf(boardElements, { foldPcbs })
     parts.push({
       pcb_board_id: board.pcb_board_id,
       drawCalls: canonicalAssemblyCalls(
