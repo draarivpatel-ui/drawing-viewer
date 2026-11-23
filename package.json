@@ -52,7 +52,7 @@
     "registry": "https://npm.pkg.github.com"
   },
   "dependencies": {
-    "@tscircuit/circuit-json-to-drawing": "https://jscdn.tscircuit.com/@tscircuit/circuit-json-to-drawing/0.0.6.tgz",
+    "@tscircuit/circuit-json-to-drawing": "https://jscdn.tscircuit.com/@tscircuit/circuit-json-to-drawing/0.0.8.tgz",
     "circuit-json": "^0.0.550",
     "circuit-json-to-gltf": "0.0.166",
     "gl-matrix": "^3.4.4",
